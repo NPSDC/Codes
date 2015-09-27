@@ -7,27 +7,19 @@ function [ a ] = LMS( red_points, blue_points, b, a, n , eta , threshold )
        a_old = a;
        flag = 0;
        eta = eta;
-       for i = 1:n
-           if((dot(transp(a), red_points(i,:)) - b) < 0)
+       for i = start:2*n
+           if(i <= n)
                delta_j = eta*(b - dot(transp(a), red_points(i,:)))*transp(red_points(i,:));
                a = a + delta_j;
-               start = mod(i , n) + 1;
-               flag = 1;
-               %break;
-           end
-       end
-       for i = 1:n
-           if((dot(transp(a), norm_blue_points(i,:)) - b) < 0)
+               %start = mod(i , n) + 1;
+           else
                delta_j = eta*(b - dot(transp(a), norm_blue_points(i,:)))*transp(norm_blue_points(i,:));
                a = a + delta_j;
                start = mod(i , n) + 1;
-               flag = 1;
-               %break;
-           end
+               end
        end
-       disp(i);
-       disp(delta_j);
-       if(norm(delta_j) <= eta*threshold)                       
+       
+       if(sum(abs(a - a_old) <= threshold ) == 3)                       
            break;
        end
        %disp(a);

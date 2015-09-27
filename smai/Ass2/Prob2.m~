@@ -21,7 +21,6 @@ plot([-a_single(1)/a_single(2), 0], [0, -a_single(1)/a_single(3)], 'g-');hold on
 plot([-a_single_marg(1)/a_single_marg(2), 0], [0, -a_single_marg(1)/a_single_marg(3)]);hold on;
 plot([-a_relax(1)/a_relax(2), 0], [0, -a_relax(1)/a_relax(3)],'y');hold on;
 plot([-a_LMS(1)/a_LMS(2), 0], [0, -a_LMS(1)/a_LMS(3)], 'm');hold on;
-legend('Class1','class2','single', 'margin','relaxation', 'LMS');
 %axis([0, 10, 0, 10]);
 hold off;
  

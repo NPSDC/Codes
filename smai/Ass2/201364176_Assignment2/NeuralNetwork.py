@@ -94,7 +94,6 @@ def main():
 				weights_second[a,b] += delta_w_kj
 		
 
-	print weights_first
 
 	f = open('test_data', 'r')			
 	test_data = pickle.load(f)
@@ -105,7 +104,7 @@ def main():
 		test = set_data(test_data[i])
 		inp_y = compute_f(weights_first, test)
 		actual_outs = compute_f(weights_second, inp_y)	
-		#print expec_out, actual_outs	
+		print expec_out, actual_outs	
 
 if __name__ == "__main__":
 	main()
