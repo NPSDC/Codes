@@ -10,6 +10,14 @@
 #include <wait.h>
 #define MAX 1024
 
+typedef struct process
+{
+	pid_t pid;
+	char proc_name[100];
+	int status;
+}process;
+process procs[100];
+int k = 0;
 void get_user_name(char user_name[MAX])
 {
 	struct passwd *p = getpwuid(getuid());
@@ -89,10 +97,35 @@ void set_print_wd(char *hwd, char *cwd, char *print_wd)
 		strcpy(print_wd, cwd);
 	
 }
+void print_jobs()
+{
+	int i;
+	for(i = 0; i < k; i++)
+	{
+		if(procs[i].status)
+			printf("[%d] %s [%d]\n",i+1, procs[i].proc_name, procs[i].pid);	
+	}
+}
+static void hdl(int sig, siginfo_t *siginfo, void *context)
+{
+	int i;
+	if(sig == SIGCHLD)
+	{
+		for(i = 0; i < k; i++)
+		{
+			if(procs[i].pid == siginfo->si_pid)
+			{
+				procs[i].status = 0;
+				fprintf(stderr, "%s with pid %d exited normally\n", procs[i].proc_name, procs[i].pid);
+			}
+		}
+	}
+}
+
 int main()
 {
 	pid_t pid;
-	int run = 1,i,p,j;
+	int run = 1,i,p,j, bg;
 	char user_name[MAX],host_name[MAX],hwd[MAX],cwd[MAX],print_wd[MAX]; //print_wd contains the format in which directory is printed, hwd home and cwd current
 	char *commands[MAX]; //structure  given by user			
 	char *commands1[MAX];	
@@ -102,6 +135,7 @@ int main()
 	char Out_file[100];
 	char dump[100];
 	char arr[MAX];
+	struct sigaction sa;	
 	const char del[2] = " ";
 	
 	get_user_name(user_name);	
@@ -111,13 +145,27 @@ int main()
 	strcpy(print_wd, "~");
 	printf("~$ ");
 	int flag_W = 0, flag_R_O = 0, flag_R_A = 0;
-	int fd[2], prevfd[2];
+	int fd[2], prevfd[2]; 
+
+	memset (&sa, '\0', sizeof(sa));
+	sa.sa_sigaction = &hdl;
+	sa.sa_flags = SA_SIGINFO;
+
+	if (sigaction(SIGCHLD, &sa, NULL) < 0) 
+	{
+		perror ("sigaction");
+		return 1;
+	}
+
 	while(run)
 	{
 		p = 0;
+		
+
 		scanf(" %[^\n]s",arr);
 		token1 = NULL;
 		token1 = strtok(arr, "|");
+		bg = 0;
 		while(token1 != NULL)
 		{
 			commands1[p] = token1;
@@ -173,14 +221,14 @@ int main()
 				
 			}
 			//print(commands, i);
-			if(strlen(commands[0]) > 1)
+		/*	if(strlen(commands[0]) > 1)
 			{
 				if(commands[0][0] == 'l' && commands[0][1] == 's')
 				{	
 					commands[i] = "--color=auto";
 					i++;
 				}
-			}
+			}*/
 			
 			commands[i] = NULL;
 		//	printf("%d\n", i);
@@ -194,8 +242,14 @@ int main()
 					
 				set_print_wd(hwd, cwd, print_wd);
 			}
+			else if(strcmp(commands[0], "jobs") == 0)
+				print_jobs();
 			else
 			{
+				//printf("%s\n", commands[i - 1]);
+				if(strcmp(commands[i-1], "&") == 0)
+					bg = 1;
+
 				pid = fork();
 				char *error[3] = {"echo", commands[0], ": command not found"};
 				if(pid < 0)
@@ -207,6 +261,11 @@ int main()
 				{
 					int ret;
 					int f;
+					if(bg == 1)
+					{	
+						setpgid(0, 0);													
+						commands[i - 1] = NULL;
+					}
 					if(j > 0)
 					{
 						close(prevfd[1]);
@@ -240,8 +299,6 @@ int main()
 					    dup2(f, 1);
 					    close(f);
 					}
-					//printf("%d\n", flag_W);
-					
 
 					ret = execvp(commands[0],commands);
 					if(ret < 0)
@@ -252,9 +309,15 @@ int main()
 						_exit(-2);
 					}
 				}
-				if(pid > 0)
+				else if(pid > 0)
 				{
-					
+					if(bg == 1)
+					{
+						strcpy(procs[k].proc_name, commands[i - 2]);						
+						procs[k].pid = pid;						
+						procs[k].status = 1;
+						k++;
+					}
 					if(j>0){
 						close(prevfd[0]);
 						close(prevfd[1]);
@@ -263,13 +326,16 @@ int main()
 						prevfd[0] = fd[0];
 						prevfd[1] = fd[1];
 					}
-					wait(NULL);	
+					if(bg == 0)
+						wait(NULL);	
 				}
-					
+					int n;
+					//bg = 0;
 			}
 		}
 			
 		printf("%s@%s:%s$ ",user_name,host_name,print_wd);
+
 		for(i = 0; i < MAX; i++)
 			commands1[i] = NULL;
 		for(i = 0; i < MAX; i++)
