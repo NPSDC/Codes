@@ -2,11 +2,11 @@ import sys
 import os
 import numpy as np
 
-def load(reload=False):
+def load(filename, reload=False):
     DATA_DIR = 'bank-additional'
     if reload:
         thedata = np.genfromtxt(
-            'bank-additional/bank-additional-full.csv',           # file name
+            os.path.join(DATA_DIR, filename),           # file name
             skip_header=1,          # lines to skip at the top
             skip_footer=0,          # lines to skip at the bottom
             delimiter=';',          # column delimiter
@@ -25,7 +25,8 @@ def load(reload=False):
 
 
 def main():
-     load(True)
+    filename = 'bank-additional-full.csv'
+    load(filename, True)
 
 
 
