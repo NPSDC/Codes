@@ -179,22 +179,27 @@ class sql_parser(object):
 		self.colnames =dict() #{table:[colname]}
 		self.agg = dict() # {function:[{table:[colname]}]}
 		self.tables = dict()
+		self.create = dict()
 
 	def parse(self):
 		query = self.sql_query
 		if(query[len(query) - 1] == ';'):
-			query = query[:len(query) - 1]
+			query = query[:- 1]
 			query_vars = query.split()
 			if(self.check_type(query_vars[0]) == -1):
-				return
-			# if(self.check_colnames(query_vars) == -1):
-			# 	return
-			# self.check_agg(query_vars)
-			if(self.check_tables(query_vars) == -1):
-				return
-			# print(self.colnames)
-			# print(self.agg)
-			# print(self.tables)
+				return -1
+			if(self.type == 'select'):
+				if(self.check_tables(query_vars) == -1):
+					return -1
+			elif(self.type == 'create'):
+				if(query_vars[1].lower() != 'table'):
+					print "Error"
+					return -1
+				if(query_vars[-1][-1] != ')'):
+					return -1
+				if(self.check_create(query_vars[2:]) == -1):
+					return -1
+				
 
 	def check_type(self, type):
 		allowed_commands = ['select', 'insert', 'delete', 'truncate', 'drop', 'create']
@@ -325,6 +330,53 @@ class sql_parser(object):
 			return -1
 		return 1
 
+	def check_create(self, query_vars):
+		datatypes = ['char', 'varchar', 'boolean', 'decimal', 'int', 'smallint', 'real', 'float', 'date', 'timestamp']	
+		vars = ' '.join(query_vars).split('(')
+		if(len(vars) != 2):
+			print("Error length")
+			return -1
+		else:
+			table_name = vars[0]
+			self.create[table_name] = dict()
+			new_vars = vars[1].split(',')
+			length = len(new_vars)
+			for index in xrange(length):
+				if(index == length - 1):
+					new_vars[index] = new_vars[index][:-1]
+				
+				temp_vars = new_vars[index].split(' ')
+				if(temp_vars[0] == ''):
+					temp_vars = temp_vars[1:]
+				if(len(temp_vars) == 2):
+					col = temp_vars[0]
+					if(col in self.create[table_name].keys()):
+						print("Col already exists")
+						return -1
+					else:
+						dtype = temp_vars[1]
+						if(temp_vars[1].split('(')[0] in datatypes):
+							self.create[table_name][col] = dtype
+				else:
+					print("Error length2")
+					return -1
+class Create(object):
+	def __init__(self, create_dic):
+		self.create_dic = create_dic
+	def execute(self):
+		Dir = 'SampleDataset-Assignment 1'
+		table_name = self.create_dic.keys()[0]
+		colnames = self.create_dic[table_name].keys()
+		with open(os.path.join(Dir,'metadata.txt'), 'a') as meta:
+			meta.write('\r\n')
+			meta.write('<begin_table>\r\n')
+			meta.write(table_name + '\r\n')
+			for i in colnames:
+				meta.write(i + '\r\n')
+			meta.write('<end_table>')
+		with open(os.path.join(Dir,table_name + '.csv'), 'w') as f:
+			w = csv.writer(f)
+
 
 def main():
 	while(1):
@@ -338,6 +390,9 @@ def main():
 			status = sel_obj.execute()
 			if(status == -1):
 				continue
+		elif(type == 'create'):
+			create_ob = Create(sql_ob.create)
+			create_ob.execute()
 
 if(__name__ == '__main__'):
 	main()
