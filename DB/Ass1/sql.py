@@ -2,6 +2,7 @@ import sqlparse as sp
 import csv
 import numpy as np
 import os
+import itertools
 
 def find_existing_tables():
 	f = open('SampleDataset-Assignment 1/metadata.txt')
@@ -35,6 +36,25 @@ def find_existing_tables():
 	
 	return tables_dict
 
+def get_records():
+	tables_dict = find_existing_tables()	
+	Dir = 'SampleDataset-Assignment 1'
+	records = dict()
+	for table in tables_dict.keys():
+		records[table] = dict()
+		for col in tables_dict[table]:
+			records[table][col] = list()
+		table_name = table + '.csv'
+		j = 0
+		with open(os.path.join(Dir, table_name), 'rb') as csvfile :
+			reader = csv.reader(csvfile)
+			for row in reader:
+				for j in xrange(len(records[table])):
+					records[table][tables_dict[table][j]].append(int(row[j]))
+					
+			
+	return records
+
 class Select(object):
 	def __init__(self, sel_colnames, sel_agg, sel_tables):
 		self.colnames = sel_colnames
@@ -63,7 +83,7 @@ class Select(object):
 			agg_indexes[func] = self.find_indexes(self.agg[func], existing_tables)
 		return agg_indexes
 
-	def execute(self):
+	def execute(self, existing_records):
 		if(bool(self.agg) and bool(self.colnames)):
 			print('Not same number of rows')
 			return -1
@@ -71,22 +91,23 @@ class Select(object):
 
 		if(bool(self.colnames)):
 			cols_indexes = self.find_col_indexes(existing_tables)
-			records = self.create_record(cols_indexes, existing_tables, 1)
+			records = self.create_record(cols_indexes, existing_tables, existing_records, 1)
 			self.display(records)
 		else:
 			agg_indexes = self.find_agg_indexes(existing_tables)
-			records = self.create_record(agg_indexes, existing_tables, 2)
+			records = self.create_record(agg_indexes, existing_tables, existing_records, 2)
+			#print records
 			self.display(records)
 		
-	def create_record(self, cols, existing_tables, type):
-		Dir = 'SampleDataset-Assignment 1'
+	def create_record(self, cols, existing_tables, existing_records, type):
 		records = dict()
 		if(type == 1):
-			records = self.create_record_more(cols, existing_tables, Dir)
+			records = self.create_record_more(cols, existing_tables, existing_records)
+			#records = self.create_record_more(cols, existing_tables, Dir)
 		if(type == 2):
 			new_rec = dict()
 		 	for funcs in cols.keys():
-		 		records[funcs] = self.create_record_more(cols[funcs], existing_tables, Dir)
+		 		records[funcs] = self.create_record_more(cols[funcs], existing_tables, existing_records)
 		 		new_rec = self.get_agg(funcs.lower(), records[funcs], new_rec)
 			records = new_rec
 		return records
@@ -104,72 +125,117 @@ class Select(object):
 			new_rec = self.distinct(rec, new_rec)
 		return new_rec
 
-	def create_record_more(self, cols, existing_tables, Dir):
+	def create_record_more(self, cols, existing_tables, existing_records):
 		records = dict()
-		for table in cols.keys():
-			for col in cols[table]:
-				if(existing_tables[table][col] not in records.keys()):
-					records[existing_tables[table][col]] = list()
-			table_name = table + '.csv'
+		lengths = list()
 	
-			with open(os.path.join(Dir, table_name), 'rb') as csvfile :
-				reader = csv.reader(csvfile)
-				for row in reader:
-					for col in cols[table]:
-						records[existing_tables[table][col]].append(int(row[col]))
+		existing_records_used = dict()
+		for table in cols.keys():
+			if(table not in existing_records_used.keys()):
+				existing_records_used[table] = dict()
+			if(table not in records.keys()):
+				records[table] = dict()
+			for col in cols[table]:
+				existing_records_used[table][existing_tables[table][col]] = existing_records[table][existing_tables[table][col]]
+				if(existing_tables[table][col] not in records.keys()):
+					records[table][existing_tables[table][col]] = list()
+				else:
+					records[table][existing_tables[table][table+'.'+col]] = list()
+		#print records
+		#print existing_records_used
+		for table in existing_records_used.keys():
+			k = existing_records_used[table].keys()[0]
+			lengths.append(len(existing_records[table][k]))
+
+		indexes = list(itertools.product(*(map(range, lengths))))		
+		for i in indexes:
+			for j in xrange(len(i)):
+				for	table in existing_records_used.keys():
+					if(table == records.keys()[j]):
+						for column in records[table]:
+							records[table][column].append(existing_records_used[table][column][i[j]])
+		#print records
+
+		# 	with open(os.path.join(Dir, table_name), 'rb') as csvfile :
+		# 		reader = csv.reader(csvfile)
+		# 		for row in reader:
+		# 			for col in cols[table]:
+		# 				records[existing_tables[table][col]].append(int(row[col]))
 	
 		return records
 
 	def max(self, records, new_dict):
-		for col in records.keys():
-			ans = max(records[col])
-			key = 'max('+col+')'
-			new_dict[key] =  list()
-			new_dict[key].append(ans)
+		for table in records.keys():
+			if(table not in new_dict.keys()):
+				new_dict[table] = dict()
+
+			for col in records[table].keys():
+				key = 'max('+col+')'
+				new_dict[table][key] =  list()
+				ans = max(records[table][col])
+				new_dict[table][key].append(ans)
 		return new_dict
 
 	def min(self, records, new_dict):
-		for col in records.keys():
-			ans = min(records[col])
-			key = 'min('+col+')'
-			new_dict[key] =  list()
-			new_dict[key].append(ans)
+		for table in records.keys():
+			if(table not in new_dict.keys()):
+				new_dict[table] = dict()
+
+			for col in records[table].keys():
+				key = 'min('+col+')'
+				new_dict[table][key] =  list()
+				ans = min(records[table][col])
+				new_dict[table][key].append(ans)
 		return new_dict
 
 	def avg(self, records, new_dict):
-		for col in records.keys():
-			ans = float(sum(records[col]))/float(len(records[col]))
-			key = 'avg('+col+')'
-			new_dict[key] =  list()
-			new_dict[key].append(ans)
+		for table in records.keys():
+			if(table not in new_dict.keys()):
+				new_dict[table] = dict()
+			
+			for col in records[table].keys():
+				ans = float(sum(records[table][col]))/float(len(records[table][col]))
+				key = 'avg('+col+')'
+				new_dict[table][key] =  list()
+				new_dict[table][key].append(ans)
 		return new_dict		
 
 	def sum(self, records, new_dict):
-		for col in records.keys():
-			ans = sum(records[col])
-			key = 'sum('+col+')'
-			new_dict[key] =  list()
-			new_dict[key].append(ans)
+		for table in records.keys():
+			if(table not in new_dict.keys()):
+				new_dict[table] = dict()
+			
+			for col in records[table].keys():
+				ans = sum(records[table][col])
+				key = 'sum('+col+')'
+				new_dict[table][key] =  list()
+				new_dict[table][key].append(ans)
 		return new_dict
 
 	def distinct(self, records, new_dict):
-		for col in records.keys():
-			ans = np.unique(records[col])
-			key = 'min('+col+')'
-			new_dict[key] =  list(ans)
-		return new_dict
+		for table in records.keys():
+			if(table not in new_dict.keys()):
+				new_dict[table] = dict()
+			
+			for col in records[table].keys():
+				ans = np.unique(records[table][col])
+				key = 'distinct('+col+')'
+				new_dict[table][key] =  list(ans)
+			return new_dict
 
 	def display(self, records):
-		length = len(records[records.keys()[0]])
+		length = len(records[records.keys()[0]][records[records.keys()[0]].keys()[0]])
 		for i in records.keys():
-			if(len(records[i]) != length):
-				print 'invalid'
-				return -1
-			print i + '\t',
+			for k in records[i].keys():
+				if(len(records[i][k]) != length):
+					print 'invalid'
+					return -1
+				print k + '\t',
 		print('\n')
 		for j in xrange(length):
 			for i in records.keys():
-				print str(records[i][j]) + '\t',
+				for k in records[i].keys():
+					print str(records[i][k][j]) + '\t',
 			print('\n')
 		print('Total '+str(length)+' rows')
 class sql_parser(object):
@@ -379,6 +445,7 @@ class Create(object):
 
 
 def main():
+	records = get_records()
 	while(1):
 		sql_ob = sql_parser(raw_input())
 		status = sql_ob.parse()
@@ -387,7 +454,7 @@ def main():
 		type =  sql_ob.type
 		if(type == 'select'):
 			sel_obj = Select(sql_ob.colnames, sql_ob.agg, sql_ob.tables)
-			status = sel_obj.execute()
+			status = sel_obj.execute(records)
 			if(status == -1):
 				continue
 		elif(type == 'create'):
