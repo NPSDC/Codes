@@ -154,14 +154,7 @@ class Select(object):
 					if(table == records.keys()[j]):
 						for column in records[table]:
 							records[table][column].append(existing_records_used[table][column][i[j]])
-		#print records
 
-		# 	with open(os.path.join(Dir, table_name), 'rb') as csvfile :
-		# 		reader = csv.reader(csvfile)
-		# 		for row in reader:
-		# 			for col in cols[table]:
-		# 				records[existing_tables[table][col]].append(int(row[col]))
-	
 		return records
 
 	def max(self, records, new_dict):
@@ -245,6 +238,7 @@ class sql_parser(object):
 		self.colnames =dict() #{table:[colname]}
 		self.agg = dict() # {function:[{table:[colname]}]}
 		self.tables = dict()
+		self.oper = None
 		self.create = dict()
 
 	def parse(self):
@@ -277,7 +271,7 @@ class sql_parser(object):
 			print(type + ' is not valid')
 			return -1
 
-	def check_colnames(self, query_vars, from_index, existing_tables):
+	def check_colnames(self, query_vars, from_index, index_where, existing_tables):
 		for i in range(1, from_index):
 			var_list = query_vars[i].split(',')
 			for j in var_list:
@@ -314,6 +308,86 @@ class sql_parser(object):
 							else:		
 								print('colname '+ j + " does not exist or not chosen after from")
 								return -1
+
+		if(index_where is not None):
+			leg_opers = [ '<=', '<', '>=', '>', '=']
+			i = index_where + 1
+			query_vars = query_vars[i:]
+			end_index = len(query_vars)
+			if('and' in map(str.lower,query_vars)):
+				index_op = map(str.lower,query_vars).index('and')
+				self.oper = query_vars[index_op]
+			elif('or' in map(str.lower,query_vars)):
+				index_op = map(str.lower,query_vars).index('or')
+				self.oper = query_vars[index_op]
+			
+			new_vars = ''.join(query_vars).split(self.oper)
+			if(self.oper):
+				if(len(new_vars) < 2):
+					print 'Invalid'
+					return -1
+		
+			for var in new_vars:
+				val = map(var.find, leg_opers)
+				for o in xrange(len(val)):
+					if(val[o] != -1):
+						break
+
+				if(o+1 == 6):
+					print('no valid operator found')
+					return -1
+
+				log_oper = leg_opers[o]
+				actual_vars = var.split(log_oper)
+				if(len(actual_vars) != 2):
+					print("invalid")
+					return -1
+				for p in xrange(2):
+					if(p == 0):
+						dot_split = actual_vars[p].split('.')
+						if(len(dot_split) == 2):
+							if(dot_split[0] in self.tables['sel']):
+								if(dot_split[0] not in self.tables['where'].keys()):
+									self.tables['where'][dot_split[0]] = dict()
+							else:
+								print 'invalid table name'
+								return -1
+							if(dot_split[1] in existing_tables[dot_split[0]]):
+								table_name = dot_split[0]
+								col_name = dot_split[1]
+								self.tables['where'][dot_split[0]][dot_split[1]] = list()
+							else:
+								print 'invalid column name'
+								return -1
+						else:
+							flag = 0 
+							for table in self.tables['sel']:
+								if(dot_split[0] in existing_tables[table]):
+									if(table not in self.tables['where'].keys()):
+										self.tables['where'][table] = dict()
+									self.tables['where'][table][dot_split[0]] = list()
+									flag = 1
+									table_name = table
+									col_name = dot_split[0]
+									break
+							if(flag == 0):
+								print 'invalid column name'
+								return -1
+					else:
+						self.tables['where'][table_name][col_name].append(actual_vars[p])
+						self.tables['where'][table_name][col_name].append(log_oper)
+
+
+		print self.tables['where']	
+
+			# if(i == end_index):
+			# 	print 'Incomplete where clause'
+			# 	return -1
+			# while(i < end_index):
+			# 	val = query_vars[i]
+			# 	if(val == )
+			# 	dot_sep = val.split('.')
+
 		return 0	
 
 	def check_agg(self, query_vars, from_index, existing_tables):
@@ -378,6 +452,7 @@ class sql_parser(object):
 			end_index = index_where
 
 		self.tables['sel'] = list()
+		self.tables['where'] = dict()
 		while(i < end_index):
 			val = query_vars[i]
 			val_list = val.split(',')
@@ -390,7 +465,8 @@ class sql_parser(object):
 						return -1
 			i += 1
 
-		if(self.check_colnames(query_vars, index_from, existing_tables) == -1):
+			
+		if(self.check_colnames(query_vars, index_from, index_where, existing_tables) == -1):
 			return -1
 		if(self.check_agg(query_vars, index_from, existing_tables) == -1):
 			return -1
@@ -449,17 +525,17 @@ def main():
 	while(1):
 		sql_ob = sql_parser(raw_input())
 		status = sql_ob.parse()
-		if(status == -1):
-			continue
-		type =  sql_ob.type
-		if(type == 'select'):
-			sel_obj = Select(sql_ob.colnames, sql_ob.agg, sql_ob.tables)
-			status = sel_obj.execute(records)
-			if(status == -1):
-				continue
-		elif(type == 'create'):
-			create_ob = Create(sql_ob.create)
-			create_ob.execute()
+		# if(status == -1):
+		# 	continue
+		# type =  sql_ob.type
+		# if(type == 'select'):
+		# 	sel_obj = Select(sql_ob.colnames, sql_ob.agg, sql_ob.tables)
+		# 	status = sel_obj.execute(records)
+		# 	if(status == -1):
+		# 		continue
+		# elif(type == 'create'):
+		# 	create_ob = Create(sql_ob.create)
+		# 	create_ob.execute()
 
 if(__name__ == '__main__'):
 	main()
