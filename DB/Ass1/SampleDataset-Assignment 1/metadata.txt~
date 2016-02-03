@@ -8,8 +8,9 @@ C
 table2
 B
 D
-<end_table><begin_table>
-T
-P
-V
+<end_table>
+<begin_table>
+T1
+col2
+col1
 <end_table>

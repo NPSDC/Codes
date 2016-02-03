@@ -83,12 +83,11 @@ class Select(object):
 			agg_indexes[func] = self.find_indexes(self.agg[func], existing_tables)
 		return agg_indexes
 
-	def execute(self, existing_records):
+	def execute(self, existing_records, existing_tables):
 		if(bool(self.agg) and bool(self.colnames)):
 			print('Not same number of rows')
 			return -1
-		existing_tables = find_existing_tables()
-
+		
 		if(bool(self.colnames)):
 			cols_indexes = self.find_col_indexes(existing_tables)
 			records = self.create_record(cols_indexes, existing_tables, existing_records, 1)
@@ -143,6 +142,7 @@ class Select(object):
 					records[table][existing_tables[table][table+'.'+col]] = list()
 		#print records
 		#print existing_records_used
+		self.work_with_where(existing_tables, existing_records)
 		for table in existing_records_used.keys():
 			k = existing_records_used[table].keys()[0]
 			lengths.append(len(existing_records[table][k]))
@@ -156,6 +156,49 @@ class Select(object):
 							records[table][column].append(existing_records_used[table][column][i[j]])
 
 		return records
+
+	def work_with_where(self, existing_tables, existing_records):
+		indexes = dict()
+		val = 0
+		op = 0
+		for table in self.tables['where'].keys():
+			if(table not in indexes.keys()):
+				indexes[table] = dict()
+			for cols in self.tables['where'][table].keys():
+				flag = 0
+				if(cols not in indexes[table].keys()):
+					indexes[table][cols] = list()
+				for i in xrange(len(self.tables['where'][table][cols])):
+					if(i % 2 == 0):
+						#print self.tables['where'][table][cols][i]
+						if(len(self.tables['where'][table][cols][i]) > 1):
+							if(self.tables['where'][table][cols][i][1:].isdigit()):
+								flag = 1
+						else:
+							if(self.tables['where'][table][cols][i].isdigit()):
+								flag = 1
+						if(flag == 1):
+							#print 'yeah'
+							val = self.tables['where'][table][cols][i]
+							val = int(val)
+					else:
+						op = self.tables['where'][table][cols][i]
+						#print existing_records[table][cols]
+						if(op == '='):
+							indexes[table][cols].append(list(np.where(np.array(existing_records[table][cols]) == val)))
+						elif(op == '>'):
+							indexes[table][cols].append(list(np.where(np.array(existing_records[table][cols]) > val)))
+						elif(op == '>='):
+							indexes[table][cols].append(list(np.where(np.array(existing_records[table][cols]) >= val)))
+						elif(op == '<'):
+							indexes[table][cols].append(list(np.where(np.array(existing_records[table][cols]) < val)))
+						elif(op == '<='):
+							indexes[table][cols].append(list(np.where(np.array(existing_records[table][cols]) <= val)))
+						
+		
+		# if(self.oper is not None):
+				
+		# print indexes
 
 	def max(self, records, new_dict):
 		for table in records.keys():
@@ -240,6 +283,10 @@ class sql_parser(object):
 		self.tables = dict()
 		self.oper = None
 		self.create = dict()
+		self.insert = dict()
+		self.delete = dict()
+		self.drop = None
+		self.truncate = None
 
 	def parse(self):
 		query = self.sql_query
@@ -258,6 +305,42 @@ class sql_parser(object):
 				if(query_vars[-1][-1] != ')'):
 					return -1
 				if(self.check_create(query_vars[2:]) == -1):
+					return -1
+			elif(self.type == 'insert'):
+				if(len(query_vars) != 4):
+					print 'Incomplete Statement'
+					return -1
+				if(query_vars[1].lower() != 'into'):
+					print "Error"
+					return -1
+				if(query_vars[3][:6].lower() != 'values'):
+					print "Error1"
+					return -1
+				if(self.check_insert(query_vars) == -1):
+					return -1
+
+			elif(self.type == 'delete'):
+				if(query_vars[1].lower() != 'from'):
+					print "Error"
+					return -1
+				if(query_vars[3].lower() != 'where'):
+					print "Error"
+					return -1
+				if(self.check_delete(query_vars[2:]) == -1):
+					return -1
+
+			elif(self.type == 'drop'):
+				if(query_vars[1].lower() != 'table'):
+					print "Error"
+					return -1
+				if(self.check_drop(query_vars[2], 1) == -1):
+					return -1
+
+			elif(self.type == 'truncate'):
+				if(query_vars[1].lower() != 'table'):
+					print "Error"
+					return -1
+				if(self.check_drop(query_vars[2], 2) == -1):
 					return -1
 				
 
@@ -365,7 +448,8 @@ class sql_parser(object):
 								if(dot_split[0] in existing_tables[table]):
 									if(table not in self.tables['where'].keys()):
 										self.tables['where'][table] = dict()
-									self.tables['where'][table][dot_split[0]] = list()
+									if(dot_split[0] not in self.tables['where'][table].keys()):
+										self.tables['where'][table][dot_split[0]] = list()
 									flag = 1
 									table_name = table
 									col_name = dot_split[0]
@@ -378,7 +462,7 @@ class sql_parser(object):
 						self.tables['where'][table_name][col_name].append(log_oper)
 
 
-		print self.tables['where']	
+		#print self.tables['where']	
 
 			# if(i == end_index):
 			# 	print 'Incomplete where clause'
@@ -486,7 +570,6 @@ class sql_parser(object):
 			for index in xrange(length):
 				if(index == length - 1):
 					new_vars[index] = new_vars[index][:-1]
-				
 				temp_vars = new_vars[index].split(' ')
 				if(temp_vars[0] == ''):
 					temp_vars = temp_vars[1:]
@@ -502,13 +585,83 @@ class sql_parser(object):
 				else:
 					print("Error length2")
 					return -1
+
+	def check_insert(self, query_vars):
+		existing_tables = find_existing_tables()
+		table_name = None
+		if(query_vars[2] in existing_tables.keys()):
+			self.insert[query_vars[2]] = dict()
+			table_name = query_vars[2]
+		else:
+			print "Wrong table name"
+			return -1
+		if(query_vars[3][6] == '(' and query_vars[3][-1] == ')'):   #values()
+			query_vars[3] = query_vars[3].replace('values(','')
+			query_vars[3] = query_vars[3].replace(')','')
+			comma_sep = query_vars[3].split(',')
+			if(query_vars[3].find('=') == - 1):				
+				if(len(comma_sep) == len(existing_tables[table_name])):
+					columns = existing_tables[table_name]
+					for i in xrange(len(existing_tables[table_name])):
+						self.insert[table_name][columns[i]] = comma_sep[i]
+				else:
+					print len(comma_sep),len(existing_tables[table_name]) 
+					print 'Column count does not match'
+					return -1
+			else:
+				for i in comma_sep:
+					val = i.split('=')
+					if(len(val) == 2):
+						if(val[0] in existing_tables[table_name]):
+							self.insert[table_name][val[0]] = val[1]
+						else:
+							print 'invalid column name'
+							return -1
+					else:
+						print 'invalid'
+						return -1
+
+		else:
+			print 'invalid Statement'
+			return -1
+
+	def check_delete(self, query_vars):
+		table_name = query_vars[0]
+		existing_tables = find_existing_tables()
+		if(table_name in existing_tables.keys()):
+			self.delete[table_name] = dict()
+			if(query_vars[2] in existing_tables[table_name]):
+				self.delete[table_name][query_vars[2]] = query_vars[4]
+			else:
+				print 'Invalid col_name'
+				return -1
+		else:
+			print 'invalid table name'
+			return -1
+
+	def check_drop(self, table_name, val):
+		existing_tables = find_existing_tables()
+		if(table_name in existing_tables.keys()):
+			if(val == 1):
+				self.drop = table_name
+			else:
+				self.truncate = table_name
+			
+		else:
+			print 'invalid table_name'
+			return -1
+
 class Create(object):
 	def __init__(self, create_dic):
 		self.create_dic = create_dic
-	def execute(self):
+	def execute(self, existing_records, existing_tables):
 		Dir = 'SampleDataset-Assignment 1'
 		table_name = self.create_dic.keys()[0]
 		colnames = self.create_dic[table_name].keys()
+		existing_tables[table_name] = colnames
+		existing_records[table_name] = dict()
+		for c in colnames:
+			existing_records[table_name][c] = list()
 		with open(os.path.join(Dir,'metadata.txt'), 'a') as meta:
 			meta.write('\r\n')
 			meta.write('<begin_table>\r\n')
@@ -519,23 +672,153 @@ class Create(object):
 		with open(os.path.join(Dir,table_name + '.csv'), 'w') as f:
 			w = csv.writer(f)
 
+class Insert(object):
+	def __init__(self, insert_dict):
+		self.insert_dict = insert_dict
+	def execute(self, existing_records, existing_tables):
+		table_name = self.insert_dict.keys()[0]
+		col_names = self.insert_dict[table_name].keys()
+		for col in col_names:
+			existing_records[table_name][col].append(int(self.insert_dict[table_name][col]))
+		self.insert_csv(existing_tables)
+
+	def insert_csv(self, existing_tables):
+		Dir = 'SampleDataset-Assignment 1'
+		table_name = self.insert_dict.keys()[0]
+		col_names = self.insert_dict[table_name].keys()
+		row = list()
+		for cols in existing_tables[table_name]:
+			if(cols in col_names):
+				row.append(self.insert_dict[table_name][cols]) 
+			else:
+				row.append(0)
+		with open(os.path.join(Dir, table_name) + '.csv', 'ab') as csvfile :
+			writer = csv.writer(csvfile)
+			writer.writerow(row)
+		
+class Delete(object):
+	def __init__(self, del_dict):
+		self.delete_dict = del_dict
+	def execute(self, existing_records, existing_tables):
+		table_name = self.delete_dict.keys()[0]
+		col_name = self.delete_dict[table_name].keys()[0]
+		val = self.delete_dict[table_name][col_name]
+		if(int(val) in existing_records[table_name][col_name]):
+			index = existing_records[table_name][col_name].index(int(val))
+		else:
+			return
+		for col in existing_records[table_name].keys():
+			existing_records[table_name][col].remove(existing_records[table_name][col][index])
+		self.delete_csv(existing_tables)
+
+	def delete_csv(self, existing_tables):
+		Dir = 'SampleDataset-Assignment 1'
+		table_name = self.delete_dict.keys()[0]
+		col_name = self.delete_dict[table_name].keys()[0]
+		row = list()
+		stop_ind = -1
+		count = 0
+		row_write = list()
+		val = self.delete_dict[table_name][col_name]
+		with open(os.path.join(Dir, table_name) + '.csv', 'rb') as csvfile :
+			reader = csv.reader(csvfile)
+			for row in reader:
+				for j in xrange(len(existing_tables[table_name])):
+					if(existing_tables[table_name][j] == col_name):
+						if(row[j] == val):
+							stop_ind = count
+							continue
+				if(stop_ind == count):
+					stop_ind = -1
+					continue
+				row_write.append(row)
+				count += 1
+		with open(os.path.join(Dir, table_name) + '.csv', 'wb') as csvfile :
+			writer = csv.writer(csvfile)
+			writer.writerows(row_write)
+
+class Truncate(object):
+	def __init__(self, tab):
+		self.table_name = tab
+
+	def execute(self, existing_records):
+		Dir = 'SampleDataset-Assignment 1'
+		table_name = self.table_name
+		cols = existing_records[table_name].keys()
+		for col in cols:
+			existing_records[table_name][col] = []
+		with open(os.path.join(Dir, table_name) + '.csv', 'wb') as csvfile :
+			w = csv.writer(csvfile)
+
+class Drop(object):
+	def __init__(self, tab):
+		self.table_name = tab
+
+	def execute(self, existing_records, existing_tables):
+		Dir = 'SampleDataset-Assignment 1'
+		table_name = self.table_name
+		cols = existing_records[table_name].keys()
+		count = 0
+		for col in cols:
+			if(len(existing_records[table_name][col]) == 0):
+				count += 1
+		if(count == len(cols)):
+			existing_records.pop(table_name)
+			with open(os.path.join(Dir,'metadata.txt'), 'w') as meta:
+				for table in existing_records.keys()[:-1]:
+					meta.write('<begin_table>\r\n')
+					meta.write(table + '\r\n')
+					colnames = existing_tables[table]
+					for i in colnames:
+						meta.write(i + '\r\n')
+					meta.write('<end_table>\n')
+				meta.write('<begin_table>\r\n')
+				meta.write(existing_records.keys()[-1] + '\r\n')
+				colnames = existing_tables[existing_records.keys()[-1]]
+				for i in colnames:
+					meta.write(i + '\r\n')
+				meta.write('<end_table>')
+			os.remove(os.path.join(Dir, table_name) + '.csv')
+		else:
+			print 'can\'t truncate'
+			return
 
 def main():
 	records = get_records()
+	print records
+	existing_tables = find_existing_tables()
 	while(1):
 		sql_ob = sql_parser(raw_input())
 		status = sql_ob.parse()
-		# if(status == -1):
-		# 	continue
-		# type =  sql_ob.type
-		# if(type == 'select'):
-		# 	sel_obj = Select(sql_ob.colnames, sql_ob.agg, sql_ob.tables)
-		# 	status = sel_obj.execute(records)
-		# 	if(status == -1):
-		# 		continue
-		# elif(type == 'create'):
-		# 	create_ob = Create(sql_ob.create)
-		# 	create_ob.execute()
+		if(status == -1):
+			continue
+		type =  sql_ob.type
+		if(type == 'select'):
+			sel_obj = Select(sql_ob.colnames, sql_ob.agg, sql_ob.tables)
+			status = sel_obj.execute(records, existing_tables)
+			if(status == -1):
+				continue
+		elif(type == 'create'):
+			create_ob = Create(sql_ob.create)
+			create_ob.execute(records, existing_tables)
+			print existing_tables
+		elif(type == 'insert'):
+			insert_ob = Insert(sql_ob.insert)
+			insert_ob.execute(records, existing_tables)
+			print records
+		elif(type == 'delete'):
+			del_ob = Delete(sql_ob.delete)
+			del_ob.execute(records, existing_tables)
+			print records
+		elif(type == 'truncate'):
+			truncate_ob = Truncate(sql_ob.truncate)
+			truncate_ob.execute(records)
+			print records
+		elif(type == 'drop'):
+			print sql_ob.drop
+			drop_ob = Drop(sql_ob.drop)
+			drop_ob.execute(records, existing_tables)
+			print records
 
 if(__name__ == '__main__'):
 	main()
